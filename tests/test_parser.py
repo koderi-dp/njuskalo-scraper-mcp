@@ -83,3 +83,9 @@ def test_listings_skip_non_car_ads():
         {"id": 2, "title": "Air pods", "url": "/slusalice/air-pods-oglas-2"},
     ]}}}
     assert [x["id"] for x in listings_from_state(state)] == ["1"]
+
+
+def test_looks_blocked_detects_captcha_page():
+    assert looks_blocked("<script src='https://hcaptcha.com/1/api.js'></script>", "https://www.njuskalo.hr/auti")
+    assert looks_blocked("<html></html>", "https://validate.perfdrive.com/abc/?ssc=www.njuskalo.hr")
+    assert not looks_blocked("<script>window.__INITIAL_STATE__={}</script>hcaptcha.com", "https://www.njuskalo.hr/auti")

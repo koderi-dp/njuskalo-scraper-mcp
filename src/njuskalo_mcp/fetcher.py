@@ -1,12 +1,15 @@
 """Fetch Njuskalo pages politely: browser TLS fingerprint, rate limit, cache.
 
-Njuskalo sits behind Radware/ShieldSquare bot protection and blocks most
-datacenter and non-Croatian IPs, so run this from a Croatian residential
-connection or set NJUSKALO_PROXY.
+Njuskalo sits behind Radware/ShieldSquare bot protection. A session that never
+runs the site's JavaScript is allowed a few page views, then gets redirected to
+an hCaptcha page on validate.perfdrive.com; datacenter and proxy IPs hit that
+sooner. Once a session has been challenged every later request from it is
+challenged too, so a challenged session is discarded.
 """
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import random
 import time
@@ -21,9 +24,10 @@ class BlockedError(RuntimeError):
 
 
 BLOCK_HINT = (
-    "Njuskalo blocked or ignored the request. It only serves Croatian, "
-    "non-datacenter IPs: run the server from a home connection in Croatia "
-    "or set NJUSKALO_PROXY to a Croatian residential proxy."
+    "Njuskalo's bot protection (Radware) answered with a captcha challenge. "
+    "This happens after a few page views, sooner from datacenter or proxy IPs. "
+    "Wait 10-15 minutes before searching again; for reliable use run the server "
+    "on a home connection in Croatia or set NJUSKALO_PROXY to a residential proxy."
 )
 
 
@@ -32,7 +36,7 @@ def looks_blocked(html: str, final_url: str = "") -> bool:
         return True
     if STATE_MARKER in html:
         return False  # the security script can be present on pages that loaded fine
-    return any(m in html for m in ("validate.perfdrive", "_pxBlock", "px-captcha", "captcha-delivery"))
+    return any(m in html for m in ("validate.perfdrive", "hcaptcha.com", "_pxBlock", "px-captcha", "captcha-delivery"))
 
 
 class Fetcher:
@@ -81,6 +85,7 @@ class Fetcher:
 
         html = resp.text
         if resp.status_code in (403, 429) or looks_blocked(html, str(resp.url)):
+            await self._reset_session()  # the jar now holds challenge cookies; a fresh one may pass
             html = await self._browser_fallback(url)
         elif resp.status_code == 404:
             raise LookupError(f"Ad or page not found: {url}")
@@ -89,6 +94,12 @@ class Fetcher:
 
         self._cache[url] = (time.monotonic(), html)
         return html
+
+    async def _reset_session(self) -> None:
+        session, self._session = self._session, None
+        if session is not None:
+            with contextlib.suppress(Exception):  # closing a dead session must not mask the block
+                await session.close()
 
     async def _browser_fallback(self, url: str) -> str:
         """Retry with a real browser if the optional 'browser' extra is installed."""
