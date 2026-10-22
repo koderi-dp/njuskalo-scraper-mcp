@@ -125,7 +125,8 @@ apps.add_html_resource(
     SHORTLIST_URI,
     files("njuskalo_mcp").joinpath("shortlist.html").read_text(encoding="utf-8"),
     name="Car shortlist",
-    csp=ResourceCsp(resource_domains=["https://www.njuskalo.hr"]),
+    csp=ResourceCsp(resource_domains=[
+        "https://www.njuskalo.hr", "https://fonts.googleapis.com", "https://fonts.gstatic.com"]),
 )
 
 mcp = MCPServer("njuskalo-cars", instructions=INSTRUCTIONS, extensions=[apps])

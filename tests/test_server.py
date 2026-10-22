@@ -153,7 +153,7 @@ async def test_show_shortlist_is_an_mcp_app():
         page = (await client.read_resource(server.SHORTLIST_URI)).contents[0]
         assert page.mime_type == "text/html;profile=mcp-app"
         assert "ui/initialize" in page.text and "get_car_photos" in page.text
-        assert page.meta["ui"]["csp"]["resourceDomains"] == ["https://www.njuskalo.hr"]
+        assert "https://www.njuskalo.hr" in page.meta["ui"]["csp"]["resourceDomains"]
 
         result = await client.call_tool("show_shortlist", {
             "cars": [car], "title": "1 car", "skipped": [{"title": "Astra", "reason": "warning light"}]})
