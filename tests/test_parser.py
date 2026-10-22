@@ -75,3 +75,11 @@ def test_parse_categories():
     assert cats["Alfa Romeo"] == "/auti/alfa-romeo"
     assert cats["Toyota"] == "/auti/toyota"
     assert len(cats) > 80
+
+
+def test_listings_skip_non_car_ads():
+    state = {"browseListingsStore": {"pageData": {"latestListings": [
+        {"id": 1, "title": "Golf", "url": "/auti/golf-oglas-1"},
+        {"id": 2, "title": "Air pods", "url": "/slusalice/air-pods-oglas-2"},
+    ]}}}
+    assert [x["id"] for x in listings_from_state(state)] == ["1"]

@@ -77,6 +77,9 @@ def listings_from_state(state: dict) -> list[dict]:
             if ad_id in seen:
                 continue
             seen.add(ad_id)
+            url = _listing_url(item)
+            if url and not url.startswith(f"{BASE_URL}/auti/"):
+                continue  # the "latest ads" box mixes in bikes, tyres, phones...
             results.append(
                 {
                     "id": ad_id,
@@ -85,7 +88,7 @@ def listings_from_state(state: dict) -> list[dict]:
                     "location": item.get("location", ""),
                     "posted": item.get("createdAtFormatted") or item.get("createdAt") or "",
                     "info": _abstracts(item),
-                    "url": _listing_url(item),
+                    "url": url,
                     "promoted": key != "regularListings",
                 }
             )
