@@ -1,7 +1,14 @@
 from pathlib import Path
 
 from njuskalo_mcp.fetcher import looks_blocked
-from njuskalo_mcp.parser import ad_id_from, extract_initial_state, listings_from_state, parse_ad_page
+from njuskalo_mcp.parser import (
+    ad_id_from,
+    extract_initial_state,
+    listings_from_state,
+    parse_ad_page,
+    parse_categories,
+    parse_filter_form,
+)
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -49,3 +56,22 @@ def test_looks_blocked():
     assert looks_blocked("<html>validate.perfdrive.com</html>")
     assert not looks_blocked("<script>ShieldSquare</script><script>window.__INITIAL_STATE__={}</script>")
     assert looks_blocked("", "https://validate.perfdrive.com/abc")
+
+
+def test_parse_filter_form_from_real_page():
+    form = parse_filter_form((FIX / "filters_page.html").read_text())
+    assert form["fuelTypeId"]["options"]["602"] == "Diesel"
+    assert form["transmissionTypeId"] == {"type": "multi", "options": {
+        "610": "Mehanički mjenjač", "611": "Automatski", "612": "Automatski sekvencijski",
+        "613": "Sekvencijski mjenjač"}}
+    assert form["price"] == {"type": "range"}
+    assert form["yearManufactured"] == {"type": "range"}
+    assert form["onlyFullPrice"]["value"] == "true"
+    assert "page" not in form and "vehicleIds" not in form
+
+
+def test_parse_categories():
+    cats = parse_categories((FIX / "filters_page.html").read_text())
+    assert cats["Alfa Romeo"] == "/auti/alfa-romeo"
+    assert cats["Toyota"] == "/auti/toyota"
+    assert len(cats) > 80

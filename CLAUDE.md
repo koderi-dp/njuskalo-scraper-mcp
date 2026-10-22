@@ -4,9 +4,9 @@ This is an MCP server that lets Claude find the best used car on Njuskalo.hr, by
 
 ## Layout
 
-- `src/njuskalo_mcp/server.py` holds the MCPServer (mcp SDK **2.x**; `FastMCP` was renamed `MCPServer`), the `search_cars` and `get_car_details` tools, and the stdio/HTTP entry point with optional bearer auth (`MCP_AUTH_TOKEN`).
+- `src/njuskalo_mcp/server.py` holds the MCPServer (mcp SDK **2.x**; `FastMCP` was renamed `MCPServer`), the `get_search_filters`, `search_cars` and `get_car_details` tools, and the stdio/HTTP entry point with optional bearer auth (`MCP_AUTH_TOKEN`).
 - `src/njuskalo_mcp/fetcher.py` uses curl_cffi with Chrome impersonation, a serial rate limit, a TTL cache, Radware/ShieldSquare block detection, and an optional Playwright fallback (`[browser]` extra).
-- `src/njuskalo_mcp/parser.py` parses search pages from `window.__INITIAL_STATE__` → `browseListingsStore.pageData.{regular,promoted,...}Listings`. Ad pages are parsed from embedded state, then JSON-LD, then the spec table (`dl`, `tr`, legacy `.ClassifiedDetailBasicDetails-*`).
+- `src/njuskalo_mcp/parser.py` parses search pages from `window.__INITIAL_STATE__` → `browseListingsStore.pageData.{regular,promoted,...}Listings`. `parse_filter_form` reads the `#listingResults` form and `parse_categories` the `a.CategoryListing-topCategoryLink` brand/model links, so filter IDs are never hardcoded. Ad pages are parsed from embedded state, then JSON-LD, then the spec table (`dl`, `tr`, legacy `.ClassifiedDetailBasicDetails-*`).
 - `tests/` runs against synthetic fixtures; there is no network access in tests.
 - `.github/workflows/ci.yml` runs ruff and pytest. `publish.yml` runs tests, then pushes a multi-arch image to `ghcr.io/koderi-dp/njuskalo-scraper-mcp`.
 
@@ -19,13 +19,13 @@ This is an MCP server that lets Claude find the best used car on Njuskalo.hr, by
 ## Live-site findings (tested 2026-10-22 from a US Google Cloud IP)
 
 - Search works: field names and `/{cat}/{slug}-oglas-{id}` URLs are correct.
-- Verified filters: `price[min]`/`price[max]`, `yearManufactured[min|max]`, `mileage[min|max]`. Other form fields seen: `fuelTypeId`, `transmissionTypeId[...]`, `bodyTypeId`, `geo[locationIds]`, `sort` (value IDs unknown).
-- `keywords` on `/auti` is **ignored** (returns unfiltered results). The right way to search by model is unknown; maybe a brand/model path or `vehicleIds`.
+- Verified filters: `price[min]`/`price[max]`, `yearManufactured[min|max]`, `mileage[min|max]`. All other filters and their IDs come from the live form (`tests/fixtures/filters_page.html` is a trimmed real copy).
+- `keywords` on `/auti` is **ignored** (returns unfiltered results). Brands are category paths (`/auti/toyota`); `search_cars(category=...)` uses them.
 - `get_car_details` parses specs and description from the spec table, but `seller` comes back empty and loan-calculator rows (Iznos, Anuitet*, EKS...) end up in `specs`.
 - Radware is not IP-based only: datacenter IPs get through at first, but bursts of requests (especially plain curl) get redirected to `validate.perfdrive.com`. The curl_cffi fetcher was blocked after ~10 quick requests.
 
 ## Still to do
 
 1. Save a real search page and a real ad page into `tests/fixtures/` and add tests for them.
-2. Fix keyword/model search, the seller selector, and filter loan rows out of `specs`.
+2. Verify live that `get_search_filters(brand=...)` returns models from a brand page and that filtered category searches work (untested: blocked during testing). Fix the seller selector, and filter loan rows out of `specs`.
 3. Test whether a cloud host stays unblocked under normal use, or needs `NJUSKALO_PROXY` / the Playwright fallback.

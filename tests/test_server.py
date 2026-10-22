@@ -56,3 +56,32 @@ async def test_search_reports_block(monkeypatch):
     monkeypatch.setattr(server, "fetcher", FakeFetcher(blocked=True))
     res = await server.search_cars()
     assert res["error"] == "blocked"
+
+
+async def test_search_resolves_readable_filters(monkeypatch, search_html):
+    fake = FakeFetcher({"/auti/toyota?": search_html, "/auti": (FIX / "filters_page.html").read_text()})
+    monkeypatch.setattr(server, "fetcher", fake)
+    res = await server.search_cars(category="/auti/toyota", filters={
+        "fuelTypeId": "diesel", "transmissionTypeId": ["Automatski", "610"],
+        "motorPower": {"min": 80}, "onlyFullPrice": True, "x[y]": 1})
+    assert res["count"] == 3
+    q = parse_qs(urlsplit(fake.urls[-1]).query)
+    assert urlsplit(fake.urls[-1]).path == "/auti/toyota"
+    assert q["fuelTypeId"] == ["602"]
+    assert q["transmissionTypeId[611]"] == ["611"] and q["transmissionTypeId[610]"] == ["610"]
+    assert q["motorPower[min]"] == ["80"] and q["onlyFullPrice"] == ["true"] and q["x[y]"] == ["1"]
+
+
+async def test_search_rejects_unknown_option(monkeypatch):
+    monkeypatch.setattr(server, "fetcher", FakeFetcher({"/auti": (FIX / "filters_page.html").read_text()}))
+    res = await server.search_cars(filters={"fuelTypeId": "steam"})
+    assert "Unknown value 'steam'" in res["error"]
+
+
+async def test_get_search_filters_for_brand(monkeypatch):
+    fake = FakeFetcher({"/auti": (FIX / "filters_page.html").read_text()})
+    monkeypatch.setattr(server, "fetcher", fake)
+    res = await server.get_search_filters(brand="alfa romeo")
+    assert res["category_path"] == "/auti/alfa-romeo"
+    assert fake.urls[-1].endswith("/auti/alfa-romeo")
+    assert "fuelTypeId" in res["filters"]

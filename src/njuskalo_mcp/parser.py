@@ -199,3 +199,54 @@ def parse_ad_page(html: str, url: str) -> dict:
         "description": _clean(str(description))[:4000],
         "seller": seller,
     }
+
+
+# Form fields that the server sets itself or that need a JS widget to fill in.
+_SKIP_FIELDS = {"page", "categoryId", "vehicleIds", "geo[lat]", "geo[lng]", "geo[autoComplete]", "geo[radius]"}
+_GROUP_RE = re.compile(r"^(\w+)\[(\w+)\]$")
+
+
+def _label_for(soup: BeautifulSoup, el) -> str:
+    label = soup.find("label", attrs={"for": el.get("id")}) if el.get("id") else None
+    return _clean(label.get_text(" ")) if label else ""
+
+
+def parse_filter_form(html: str) -> dict[str, dict]:
+    """Describe every filter in the search page's form, keyed by query parameter.
+
+    Each filter is one of: ``select`` (one of ``options``), ``multi`` (any of
+    ``options``, sent as ``name[id]=id``), ``range`` (``name[min]``/``name[max]``)
+    or ``checkbox`` (send ``value`` to enable).
+    """
+    soup = BeautifulSoup(html, "lxml")
+    form = soup.find("form", id="listingResults") or soup
+    filters: dict[str, dict] = {}
+    for el in form.find_all(["select", "input"]):
+        name = el.get("name")
+        if not name or name in _SKIP_FIELDS or el.get("type") == "hidden":
+            continue
+        group = _GROUP_RE.match(name)
+        if el.name == "select":
+            options = {o.get("value"): _clean(o.get_text(" ")) for o in el.find_all("option") if o.get("value")}
+            if group and group.group(2) in ("min", "max"):
+                filters.setdefault(group.group(1), {"type": "range"})
+            elif options:
+                filters[name] = {"type": "select", "label": _label_for(soup, el), "options": options}
+        elif group and group.group(2) in ("min", "max"):
+            filters.setdefault(group.group(1), {"type": "range"})
+        elif group and el.get("type") == "checkbox":
+            entry = filters.setdefault(group.group(1), {"type": "multi", "options": {}})
+            entry["options"][el.get("value") or group.group(2)] = _label_for(soup, el)
+        elif el.get("type") == "checkbox":
+            filters[name] = {"type": "checkbox", "label": _label_for(soup, el), "value": el.get("value") or "1"}
+    return filters
+
+
+def parse_categories(html: str) -> dict[str, str]:
+    """Map category names (brands on /auti, models on a brand page) to their URL paths."""
+    soup = BeautifulSoup(html, "lxml")
+    return {
+        _clean(a.get_text(" ")): a["href"]
+        for a in soup.select("a.CategoryListing-topCategoryLink[href]")
+        if a["href"].startswith("/")
+    }

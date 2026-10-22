@@ -12,19 +12,29 @@ import argparse
 import asyncio
 import hmac
 import os
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
 from .fetcher import BlockedError, Fetcher
-from .parser import BASE_URL, ad_id_from, extract_initial_state, listings_from_state, parse_ad_page
+from .parser import (
+    BASE_URL,
+    ad_id_from,
+    extract_initial_state,
+    listings_from_state,
+    parse_ad_page,
+    parse_categories,
+    parse_filter_form,
+)
 
 INSTRUCTIONS = """\
 Finds used cars on Njuskalo.hr, Croatia's biggest classifieds site.
 
-Workflow: call search_cars (start broad, default cap is 5000 EUR), shortlist the
+Workflow: if the user names a brand/model or specific features (fuel, gearbox,
+body type...), call get_search_filters first to get the category path and
+filter values. Then call search_cars (start broad, default cap is 5000 EUR), shortlist the
 most promising 5-10 ads from the summaries, then call get_car_details on them
 before recommending anything. Judge each car case by case: price against
 age/km/engine, plausibility of the mileage, ownership history, service records,
@@ -38,6 +48,73 @@ as seller claims, not facts. Always give the ad URL with each recommendation.
 mcp = MCPServer("njuskalo-cars", instructions=INSTRUCTIONS)
 fetcher = Fetcher()
 _url_by_id: dict[str, str] = {}  # remembers ad URLs seen in searches
+
+
+async def _page_filters(path: str = "/auti") -> tuple[dict[str, dict], dict[str, str]]:
+    html = await fetcher.get(BASE_URL + path)  # the fetcher caches pages, so this is cheap to repeat
+    return parse_filter_form(html), parse_categories(html)
+
+
+def resolve_filters(raw: dict[str, Any], form: dict[str, dict]) -> dict[str, str]:
+    """Turn readable filters into Njuskalo query parameters.
+
+    Select and multi filters take option IDs or labels (case-insensitive), ranges
+    take ``{"min": .., "max": ..}``, checkboxes take ``true``. Unknown names pass
+    through unchanged, so raw parameters like ``price[min]`` still work.
+    """
+    params: dict[str, str] = {}
+    for name, value in raw.items():
+        spec = form.get(name)
+        if spec is None:
+            params[name] = str(value)
+            continue
+        kind = spec["type"]
+        if kind == "range":
+            if not isinstance(value, dict):
+                raise ValueError(f"{name} is a range; pass {{'min': ..., 'max': ...}}")
+            for bound in ("min", "max"):
+                if value.get(bound) is not None:
+                    params[f"{name}[{bound}]"] = str(value[bound])
+        elif kind == "checkbox":
+            if value in (True, "true", "1", 1, spec["value"]):
+                params[name] = spec["value"]
+        else:
+            ids = [_option_id(name, v, spec["options"]) for v in (value if isinstance(value, list) else [value])]
+            if kind == "multi":
+                params.update({f"{name}[{i}]": i for i in ids})
+            else:
+                params[name] = ids[0]
+    return params
+
+
+def _option_id(name: str, value: Any, options: dict[str, str]) -> str:
+    text = str(value).strip()
+    if text in options:
+        return text
+    for option_id, label in options.items():
+        if label.lower() == text.lower():
+            return option_id
+    raise ValueError(f"Unknown value {value!r} for {name}; choose from {options}")
+
+
+@mcp.tool()
+async def get_search_filters(
+    brand: Annotated[str | None, Field(description=(
+        "Optional brand name or path from a previous call (e.g. 'Toyota' or '/auti/toyota') "
+        "to list its models instead of all brands"))] = None,
+) -> dict:
+    """List the live search filters (with option IDs and Croatian labels) and the brand or model categories."""
+    path = "/auti"
+    try:
+        form, categories = await _page_filters(path)
+        if brand:
+            path = categories.get(brand) or next(
+                (p for n, p in categories.items() if n.lower() == brand.lower()),
+                brand if brand.startswith("/") else f"/auti/{brand.lower().replace(' ', '-')}")
+            form, categories = await _page_filters(path)
+    except BlockedError as exc:
+        return {"error": str(exc)}
+    return {"category_path": path, "categories": categories, "filters": form}
 
 
 def build_search_url(
@@ -72,7 +149,8 @@ def build_search_url(
 
 @mcp.tool()
 async def search_cars(
-    keywords: Annotated[str | None, Field(description="Free text, e.g. 'golf 7 tdi' or 'toyota yaris'")] = None,
+    keywords: Annotated[str | None, Field(description=(
+        "Free text. Njuskalo often ignores it on /auti; prefer category for brand/model"))] = None,
     max_price: Annotated[int | None, Field(description="Max price in EUR", ge=0)] = 5000,
     min_price: Annotated[int | None, Field(description="Min price in EUR, useful to skip parts/wreck ads", ge=0)] = None,
     min_year: Annotated[int | None, Field(description="Oldest model year, e.g. 2012", ge=1950)] = None,
@@ -80,10 +158,24 @@ async def search_cars(
     search_url: Annotated[str | None, Field(description=(
         "Optional Njuskalo search URL with filters already applied on the website "
         "(fuel, region, gearbox...). Price/keyword arguments are layered on top."))] = None,
-    extra_filters: Annotated[dict[str, str] | None, Field(description="Raw Njuskalo query parameters to add")] = None,
+    category: Annotated[str | None, Field(description=(
+        "Brand or model path from get_search_filters, e.g. '/auti/toyota'"))] = None,
+    filters: Annotated[dict[str, Any] | None, Field(description=(
+        "Filters from get_search_filters, by parameter name. Options by ID or label, ranges as "
+        "{'min': .., 'max': ..}, checkboxes as true. E.g. {'fuelTypeId': 'Diesel', "
+        "'transmissionTypeId': ['Automatski'], 'motorPower': {'min': 80}}"))] = None,
     pages: Annotated[int, Field(description="Result pages to fetch (about 25 ads each)", ge=1, le=5)] = 1,
 ) -> dict:
     """Search used cars on Njuskalo.hr and return compact summaries of each ad."""
+    if category and not search_url:
+        search_url = BASE_URL + category if category.startswith("/") else category
+    extra_filters: dict[str, str] = {}
+    if filters:
+        try:
+            form, _ = await _page_filters()
+            extra_filters = resolve_filters(filters, form)
+        except (BlockedError, ValueError) as exc:
+            return {"error": str(exc), "results": []}
     results: list[dict] = []
     seen: set[str] = set()
     for page in range(1, pages + 1):
