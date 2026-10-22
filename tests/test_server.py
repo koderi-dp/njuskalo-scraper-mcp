@@ -85,3 +85,22 @@ async def test_get_search_filters_for_brand(monkeypatch):
     assert res["category_path"] == "/auti/alfa-romeo"
     assert fake.urls[-1].endswith("/auti/alfa-romeo")
     assert "fuelTypeId" in res["filters"]
+
+
+async def test_secret_path_hides_everything_else():
+    seen = []
+
+    async def app(scope, receive, send):
+        seen.append(scope["path"])
+
+    sent = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    guarded = server._with_secret_path(app, "/s3cr3t/")
+    await guarded({"type": "http", "path": "/mcp"}, None, send)
+    await guarded({"type": "http", "path": "/s3cr3tx/mcp"}, None, send)
+    await guarded({"type": "http", "path": "/s3cr3t/mcp"}, None, send)
+    assert [m["status"] for m in sent if m["type"] == "http.response.start"] == [404, 404]
+    assert seen == ["/mcp"]

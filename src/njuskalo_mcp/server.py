@@ -5,6 +5,8 @@ Run locally (stdio, for Claude Desktop / Claude Code):
 Run as a remote server (streamable HTTP on /mcp):
     njuskalo-mcp --http --host 0.0.0.0 --port 8000
 Set MCP_AUTH_TOKEN to require "Authorization: Bearer <token>" over HTTP.
+Set MCP_SECRET_PATH to serve only under /<secret>/mcp, for clients such as
+claude.ai connectors that can't send custom headers.
 """
 from __future__ import annotations
 
@@ -242,6 +244,22 @@ def _with_bearer_auth(app, token: str):
     return guarded
 
 
+def _with_secret_path(app, secret: str):
+    prefix = "/" + secret.strip("/")
+
+    async def guarded(scope, receive, send):
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if not (path == prefix or path.startswith(prefix + "/")):
+                await send({"type": "http.response.start", "status": 404,
+                            "headers": [(b"content-type", b"text/plain")]})
+                await send({"type": "http.response.body", "body": b"Not Found"})
+                return
+            scope = {**scope, "path": path[len(prefix):] or "/", "raw_path": None}
+        await app(scope, receive, send)
+    return guarded
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Njuskalo used-car MCP server")
     parser.add_argument("--http", action="store_true", help="serve streamable HTTP instead of stdio")
@@ -259,6 +277,9 @@ def main() -> None:
     token = os.getenv("MCP_AUTH_TOKEN")
     if token:
         app = _with_bearer_auth(app, token)
+    secret = os.getenv("MCP_SECRET_PATH")
+    if secret:
+        app = _with_secret_path(app, secret)
     uvicorn.run(app, host=args.host, port=args.port)
 
 

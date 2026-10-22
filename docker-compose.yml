@@ -1,0 +1,20 @@
+# Run the MCP server at home and publish it over HTTPS with a Cloudflare Tunnel.
+# No router ports need opening. Copy .env.example to .env, fill it in, then:
+#   docker compose up -d
+services:
+  njuskalo-mcp:
+    image: ghcr.io/koderi-dp/njuskalo-scraper-mcp:latest
+    restart: unless-stopped
+    environment:
+      MCP_SECRET_PATH: ${MCP_SECRET_PATH:?set MCP_SECRET_PATH in .env}
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
+      NJUSKALO_PROXY: ${NJUSKALO_PROXY:-}
+
+  cloudflared:
+    image: cloudflare/cloudflared:2024.12.2
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    depends_on:
+      - njuskalo-mcp

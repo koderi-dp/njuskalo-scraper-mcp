@@ -54,6 +54,17 @@ claude mcp add --transport http njuskalo http://<host>:8000/mcp \
   --header "Authorization: Bearer change-me"
 ```
 
+### Publish it from home with a Cloudflare Tunnel
+
+Njuskalo blocks datacenter IPs, so the most reliable setup is an always-on machine on a Croatian home connection (PC, NAS or Raspberry Pi). `docker-compose.yml` runs the server next to `cloudflared`, which gives it a public HTTPS address without opening router ports.
+
+1. Put a domain on Cloudflare (free plan). In Zero Trust → Networks → Tunnels, create a `cloudflared` tunnel and copy its token.
+2. Add a public hostname to the tunnel, e.g. `njuskalo.example.com`, with service `http://njuskalo-mcp:8000`.
+3. `cp .env.example .env`, then set `TUNNEL_TOKEN` and a long random `MCP_SECRET_PATH` (`openssl rand -hex 24`).
+4. `docker compose up -d`
+
+Your MCP URL is `https://njuskalo.example.com/<MCP_SECRET_PATH>/mcp`. In claude.ai, add it under Settings → Connectors → Add custom connector. claude.ai can't send custom headers, so the secret path is what keeps strangers out: treat the whole URL like a password.
+
 To build a larger image with the Playwright browser fallback, use `docker build --build-arg WITH_BROWSER=true .`.
 
 ## Configuration
@@ -64,6 +75,7 @@ To build a larger image with the Playwright browser fallback, use `docker build 
 | `NJUSKALO_MIN_DELAY` | `1.5` | Seconds between requests |
 | `NJUSKALO_CACHE_TTL` | `3600` | Page cache lifetime, in seconds |
 | `MCP_AUTH_TOKEN` | none | Bearer token required in HTTP mode |
+| `MCP_SECRET_PATH` | none | Serve only under `/<secret>/mcp` (for clients that can't send headers) |
 | `MCP_TRANSPORT` | `stdio` | Set to `http` to serve HTTP (the Docker image does this) |
 | `HOST` / `PORT` | `127.0.0.1` / `8000` | HTTP bind address |
 
