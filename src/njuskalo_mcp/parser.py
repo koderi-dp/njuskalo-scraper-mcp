@@ -92,6 +92,8 @@ def listings_from_state(state: dict) -> list[dict]:
                     "posted": item.get("createdAtFormatted") or item.get("createdAt") or "",
                     "info": _abstracts(item),
                     "url": url,
+                    "image": item.get("image") or "",
+                    "private_seller": item.get("isOwnerResidentialSeller"),
                     "promoted": key != "regularListings",
                 }
             )
@@ -200,8 +202,21 @@ def parse_ad_page(html: str, url: str) -> dict:
         "price": _clean(str(price)),
         "specs": specs,
         "description": _clean(str(description))[:4000],
+        "images": _images(state, soup),
         "seller": _seller(ad, soup),
     }
+
+
+def _images(state: dict, soup: BeautifulSoup) -> list[str]:
+    """Preview-size photo URLs (about 920x690), first photo first."""
+    photos = (((state.get("listingDetailStore") or {}).get("pageData") or {}).get("media") or {}).get("photos") or []
+    urls = [p.get("previewUrl") or p.get("fullUrl") for p in photos if isinstance(p, dict)]
+    urls = [u for u in urls if u][:10]
+    if not urls:
+        meta = soup.find("meta", attrs={"property": "og:image"})
+        if meta and meta.get("content"):
+            urls = [meta["content"]]
+    return urls
 
 
 def _seller(ad: dict, soup: BeautifulSoup) -> dict:

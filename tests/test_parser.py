@@ -26,6 +26,9 @@ def test_listings_normalised_and_deduplicated():
     assert golf["url"] == "https://www.njuskalo.hr/auti/vw-golf-6-1-6-tdi-oglas-51112651"
     assert golf["info"] == {"Godište": "2011.", "Kilometri": "198000 km"}
     assert golf["promoted"] is False
+    assert golf["image"] == "https://www.njuskalo.hr/image-big/auti/vw-golf-slika-1.jpg"
+    assert golf["private_seller"] is True
+    assert listings[1]["image"] == "" and listings[1]["private_seller"] is None
     assert listings[2]["url"] == "https://www.njuskalo.hr/auti/opel-astra-oglas-49000001"
     assert listings[2]["promoted"] is True
 
@@ -110,6 +113,14 @@ def test_parse_real_ad_page():
     assert ad["description"].startswith("OPEL CORSA 1,0 BENZIN")
     assert ad["seller"] == {"name": "prodavac123", "type": "private", "phone_verified": True,
                             "rating": 0, "reviews": 0, "profile_url": "https://www.njuskalo.hr/korisnik/prodavac123"}
+    assert len(ad["images"]) == 2
+    assert ad["images"][0] == "https://www.njuskalo.hr/image-w920x690/auti/opel-corsa-1.0-12v-slika-288682987.jpg"
+
+
+def test_images_fall_back_to_og_image():
+    html = '<meta property="og:image" content="https://www.njuskalo.hr/image-xlsize/auti/x.jpg">'
+    ad = parse_ad_page(html, "https://www.njuskalo.hr/auti/x-oglas-1")
+    assert ad["images"] == ["https://www.njuskalo.hr/image-xlsize/auti/x.jpg"]
 
 
 def test_seller_from_dom_when_no_state():
