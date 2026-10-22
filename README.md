@@ -71,7 +71,7 @@ To build a larger image with the Playwright browser fallback, use `docker build 
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `NJUSKALO_PROXY` | none | Proxy URL, e.g. `http://user:pass@hr-proxy:port` |
+| `NJUSKALO_PROXY` | none | Proxy URL, e.g. `http://user:pass@hr-proxy:port`. Cloud IPs get challenged by Njuskalo's bot protection almost at once; `deploy/home-proxy/` runs a proxy on your home connection for this |
 | `NJUSKALO_MIN_DELAY` | `1.5` | Seconds between requests |
 | `NJUSKALO_CACHE_TTL` | `3600` | Page cache lifetime, in seconds |
 | `MCP_AUTH_TOKEN` | none | Bearer token required in HTTP mode |

@@ -7,6 +7,7 @@ This is an MCP server that lets Claude find the best used car on Njuskalo.hr, by
 - `src/njuskalo_mcp/server.py` holds the MCPServer (mcp SDK **2.x**; `FastMCP` was renamed `MCPServer`), the `get_search_filters`, `search_cars` and `get_car_details` tools, and the stdio/HTTP entry point with optional bearer auth (`MCP_AUTH_TOKEN`).
 - `src/njuskalo_mcp/fetcher.py` uses curl_cffi with Chrome impersonation, a serial rate limit, a TTL cache, Radware/ShieldSquare block detection, and an optional Playwright fallback (`[browser]` extra).
 - `src/njuskalo_mcp/parser.py` parses search pages from `window.__INITIAL_STATE__` → `browseListingsStore.pageData.{regular,promoted,...}Listings`. `parse_filter_form` reads the `#listingResults` form and `parse_categories` the `a.CategoryListing-topCategoryLink` brand/model links, so filter IDs are never hardcoded. Ad pages are parsed from embedded state, then JSON-LD, then the spec table (`dl`, `tr`, legacy `.ClassifiedDetailBasicDetails-*`).
+- `deploy/home-proxy/` is a tinyproxy image (password, njuskalo.hr-only filter) to run at home and point `NJUSKALO_PROXY` at from a cloud host.
 - `tests/` runs against synthetic fixtures; there is no network access in tests.
 - `.github/workflows/ci.yml` runs ruff and pytest. `publish.yml` runs tests, then pushes a multi-arch image to `ghcr.io/koderi-dp/njuskalo-scraper-mcp`.
 

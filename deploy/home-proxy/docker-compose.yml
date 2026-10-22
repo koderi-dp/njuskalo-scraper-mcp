@@ -1,0 +1,12 @@
+# A small password-protected proxy that only forwards to njuskalo.hr.
+# Run it on a machine at home, forward its port on your router, and point the
+# MCP server (e.g. on Render) at it with NJUSKALO_PROXY. See README.md.
+services:
+  njuskalo-proxy:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${PROXY_PORT:-8888}:8888"
+    environment:
+      PROXY_USER: ${PROXY_USER:?set PROXY_USER in .env}
+      PROXY_PASSWORD: ${PROXY_PASSWORD:?set PROXY_PASSWORD in .env}
