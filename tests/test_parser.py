@@ -89,3 +89,31 @@ def test_looks_blocked_detects_captcha_page():
     assert looks_blocked("<script src='https://hcaptcha.com/1/api.js'></script>", "https://www.njuskalo.hr/auti")
     assert looks_blocked("<html></html>", "https://validate.perfdrive.com/abc/?ssc=www.njuskalo.hr")
     assert not looks_blocked("<script>window.__INITIAL_STATE__={}</script>hcaptcha.com", "https://www.njuskalo.hr/auti")
+
+
+def test_loan_calculator_rows_are_not_specs():
+    html = """<dl><dt>Iznos</dt><dd>3.600,00 €</dd><dt>Anuitet*</dt><dd>40,33 €</dd>
+    <dt>Prijeđeni kilometri</dt><dd>128.000 km</dd></dl>"""
+    ad = parse_ad_page(html, "https://www.njuskalo.hr/auti/opel-corsa-oglas-51851731")
+    assert ad["specs"] == {"Prijeđeni kilometri": "128.000 km"}
+
+
+def test_parse_real_ad_page():
+    url = "https://www.njuskalo.hr/auti/opel-corsa-1.0-12v-oglas-51851731"
+    ad = parse_ad_page((FIX / "real_ad_page.html").read_text(), url)
+    assert ad["id"] == "51851731"
+    assert ad["title"] == "Opel Corsa 1,0 ---128 000 km--"
+    assert ad["price"] == "3.600 €"
+    assert ad["specs"]["Prijeđeni kilometri"] == "128.000 km"
+    assert ad["specs"]["Registriran do"] == "01 / 2027"
+    assert "Anuitet*" not in ad["specs"] and "Iznos" not in ad["specs"]
+    assert ad["description"].startswith("OPEL CORSA 1,0 BENZIN")
+    assert ad["seller"] == {"name": "prodavac123", "type": "private", "phone_verified": True,
+                            "rating": 0, "reviews": 0, "profile_url": "https://www.njuskalo.hr/korisnik/prodavac123"}
+
+
+def test_seller_from_dom_when_no_state():
+    html = """<div class="ClassifiedDetailOwnerDetails"><h2 class="ClassifiedDetailOwnerDetails-title">Auto Kuća d.o.o.</h2>
+    <p class="ClassifiedDetailOwnerDetails-contactEntry">Adresa Zagreb</p></div>"""
+    ad = parse_ad_page(html, "https://www.njuskalo.hr/auti/x-oglas-1")
+    assert ad["seller"] == {"name": "Auto Kuća d.o.o.", "type": "dealer", "phone_verified": False}

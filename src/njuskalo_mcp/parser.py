@@ -16,6 +16,9 @@ BASE_URL = "https://www.njuskalo.hr"
 STATE_MARKER = "window.__INITIAL_STATE__"
 LISTING_KEYS = ("regularListings", "promotedListings", "superVauListings", "latestListings")
 AD_ID_RE = re.compile(r"oglas-(\d+)")
+# Rows of the loan calculator on ad pages; they look like specs but aren't about the car.
+LOAN_ROWS = {"Iznos", "Minimalna vrijednost", "Maksimalna vrijednost", "Rok otplate", "Anuitet*",
+             "Fiksna kamatna stopa", "EKS", "Ukupni iznos otplate kredita"}
 
 
 def extract_initial_state(html: str) -> dict | None:
@@ -115,7 +118,7 @@ def _spec_table(soup: BeautifulSoup) -> dict[str, str]:
     wraps = soup.select(".ClassifiedDetailBasicDetails-textWrapContainer")
     for label, value in zip(wraps[::2], wraps[1::2]):
         specs[_clean(label.get_text(" ")).rstrip(":")] = _clean(value.get_text(" "))
-    return {k: v for k, v in specs.items() if k and v and len(k) < 60}
+    return {k: v for k, v in specs.items() if k and v and len(k) < 60 and k not in LOAN_ROWS}
 
 
 def _json_ld(soup: BeautifulSoup) -> dict:
@@ -163,10 +166,12 @@ def parse_ad_page(html: str, url: str) -> dict:
         title = _clean(soup.find("h1").get_text(" "))
 
     description = ad.get("description") or ld.get("description") or ""
-    if not description:
-        node = soup.select_one("[class*='Description'], [itemprop='description']")
-        if node:
-            description = _clean(node.get_text(" "))
+    if not description:  # most specific first; a combined selector would return the first node in document order
+        for selector in (".ClassifiedDetailDescription-text", "[class*='Description']", "[itemprop='description']"):
+            node = soup.select_one(selector)
+            if node:
+                description = _clean(node.get_text(" "))
+                break
     if not description:
         meta = soup.find("meta", attrs={"property": "og:description"})
         description = meta.get("content", "") if meta else ""
@@ -188,11 +193,6 @@ def parse_ad_page(html: str, url: str) -> dict:
         if value and key not in specs:
             specs[key] = str(value)
 
-    seller = ""
-    node = soup.select_one("[class*='Seller'] [class*='name'], [class*='seller'] [class*='name']")
-    if node:
-        seller = _clean(node.get_text(" "))
-
     return {
         "id": ad_id,
         "url": url,
@@ -200,7 +200,29 @@ def parse_ad_page(html: str, url: str) -> dict:
         "price": _clean(str(price)),
         "specs": specs,
         "description": _clean(str(description))[:4000],
-        "seller": seller,
+        "seller": _seller(ad, soup),
+    }
+
+
+def _seller(ad: dict, soup: BeautifulSoup) -> dict:
+    """Who is selling: from the embedded state's owner object, else the owner box in the DOM."""
+    owner = ad.get("owner") if isinstance(ad.get("owner"), dict) else None
+    if owner:
+        is_store = bool(owner.get("isStore") or ad.get("isOwnerStore"))
+        return {
+            "name": owner.get("profileName") or owner.get("userName") or "",
+            "type": "dealer" if is_store else "private",
+            "phone_verified": bool(owner.get("isPhoneVerified")),
+            "rating": owner.get("averageRatingAsSeller"),
+            "reviews": owner.get("numberOfReviewsAsSeller"),
+            "profile_url": BASE_URL + owner["profileUrl"] if owner.get("profileUrl") else "",
+        }
+    name = soup.select_one(".ClassifiedDetailOwnerDetails-title")
+    info = " ".join(_clean(n.get_text(" ")) for n in soup.select(".ClassifiedDetailOwnerDetails-contactEntry"))
+    return {
+        "name": _clean(name.get_text(" ")) if name else "",
+        "type": "private" if "nije trgovac" in info else ("dealer" if info else ""),
+        "phone_verified": "verificirao broj telefona" in info,
     }
 
 
