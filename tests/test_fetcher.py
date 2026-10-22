@@ -1,6 +1,6 @@
 import pytest
 
-from njuskalo_mcp.fetcher import BLOCK_HINT, BlockedError, Fetcher
+from njuskalo_mcp.fetcher import BlockedError, Fetcher
 
 
 class FakeResponse:
@@ -32,7 +32,6 @@ async def test_challenged_session_is_discarded(monkeypatch):
         return fetcher._session
 
     monkeypatch.setattr(fetcher, "_get_session", get_session)
-    monkeypatch.setattr(fetcher, "_browser_fallback", _no_browser)  # as when the [browser] extra is absent
 
     with pytest.raises(BlockedError, match="captcha"):
         await fetcher.get("https://www.njuskalo.hr/auti")
@@ -40,7 +39,3 @@ async def test_challenged_session_is_discarded(monkeypatch):
 
     assert "__INITIAL_STATE__" in await fetcher.get("https://www.njuskalo.hr/auti")
     assert fetcher._session is fresh
-
-
-async def _no_browser(url):
-    raise BlockedError(BLOCK_HINT)

@@ -65,8 +65,6 @@ Njuskalo blocks datacenter IPs, so the most reliable setup is an always-on machi
 
 Your MCP URL is `https://njuskalo.example.com/<MCP_SECRET_PATH>/mcp`. In claude.ai, add it under Settings → Connectors → Add custom connector. claude.ai can't send custom headers, so the secret path is what keeps strangers out: treat the whole URL like a password.
 
-To build a larger image with the Playwright browser fallback, use `docker build --build-arg WITH_BROWSER=true .`.
-
 ## Configuration
 
 | Env var | Default | Meaning |

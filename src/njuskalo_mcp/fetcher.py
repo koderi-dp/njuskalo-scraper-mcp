@@ -3,8 +3,9 @@
 Njuskalo sits behind Radware/ShieldSquare bot protection. A session that never
 runs the site's JavaScript is allowed a few page views, then gets redirected to
 an hCaptcha page on validate.perfdrive.com; datacenter and proxy IPs hit that
-sooner. Once a session has been challenged every later request from it is
-challenged too, so a challenged session is discarded.
+sooner, and a headless browser is challenged on its first page load there, so
+there is no browser fallback. Once a session has been challenged every later
+request from it is challenged too, so a challenged session is discarded.
 """
 from __future__ import annotations
 
@@ -86,7 +87,7 @@ class Fetcher:
         html = resp.text
         if resp.status_code in (403, 429) or looks_blocked(html, str(resp.url)):
             await self._reset_session()  # the jar now holds challenge cookies; a fresh one may pass
-            html = await self._browser_fallback(url)
+            raise BlockedError(BLOCK_HINT)
         elif resp.status_code == 404:
             raise LookupError(f"Ad or page not found: {url}")
         elif resp.status_code >= 400:
@@ -100,28 +101,6 @@ class Fetcher:
         if session is not None:
             with contextlib.suppress(Exception):  # closing a dead session must not mask the block
                 await session.close()
-
-    async def _browser_fallback(self, url: str) -> str:
-        """Retry with a real browser if the optional 'browser' extra is installed."""
-        try:
-            from playwright.async_api import async_playwright
-        except ImportError:
-            raise BlockedError(BLOCK_HINT) from None
-        async with async_playwright() as p:
-            launch = {"headless": True}
-            if self.proxy:
-                launch["proxy"] = {"server": self.proxy}
-            browser = await p.chromium.launch(**launch)
-            try:
-                page = await browser.new_page(locale="hr-HR")
-                await page.goto(url, wait_until="domcontentloaded", timeout=45000)
-                await page.wait_for_timeout(3000)
-                html = await page.content()
-            finally:
-                await browser.close()
-        if looks_blocked(html, url):
-            raise BlockedError(BLOCK_HINT)
-        return html
 
     async def close(self) -> None:
         if self._session is not None:
