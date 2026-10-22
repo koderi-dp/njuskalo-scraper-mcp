@@ -48,12 +48,14 @@ status, and whether it is an import. Ad text and spec labels are Croatian
 "Snaga motora" = power, "Registriran do" = registered until). Treat listing text
 as seller claims, not facts. Always give the ad URL with each recommendation.
 
-Photos: get_car_photos returns the actual pictures of an ad, so you can look at
-them (rust, dents, tyre wear, interior state, mismatched panels) and show them.
-Call it for the final 2-4 candidates, not for every result. When the user wants
-a shortlist "with pictures", build an HTML page (an artifact, or a local file
-in Claude Code) that embeds the returned photos as data URIs; hotlinked
-njuskalo.hr images are blocked inside artifacts.
+Photos: get_car_photos returns the actual pictures of an ad so that you can
+inspect them (rust, dents, tyre wear, interior state, mismatched panels) and
+report what you see. Call it for the final 2-4 candidates, not for every
+result. The images are for your eyes: a chat reply cannot show them, so give
+the user the ad URL and the photo URLs (search results carry `image`, details
+carry `images`) as links. Only when you can write files (e.g. Claude Code) can
+you build a local HTML shortlist with the photos; hotlinked njuskalo.hr images
+work in a normal browser but are blocked inside claude.ai artifacts.
 """
 
 mcp = MCPServer("njuskalo-cars", instructions=INSTRUCTIONS)
