@@ -45,6 +45,8 @@ def build_search_url(
     keywords: str | None,
     min_price: int | None,
     max_price: int | None,
+    min_year: int | None,
+    max_km: int | None,
     extra_filters: dict[str, str] | None,
     page: int,
 ) -> str:
@@ -54,9 +56,13 @@ def build_search_url(
     if keywords:
         params["keywords"] = keywords
     if min_price:
-        params["price[from]"] = str(min_price)
+        params["price[min]"] = str(min_price)
     if max_price:
-        params["price[to]"] = str(max_price)
+        params["price[max]"] = str(max_price)
+    if min_year:
+        params["yearManufactured[min]"] = str(min_year)
+    if max_km:
+        params["mileage[max]"] = str(max_km)
     params.update(extra_filters or {})
     params.pop("page", None)
     if page > 1:
@@ -69,9 +75,11 @@ async def search_cars(
     keywords: Annotated[str | None, Field(description="Free text, e.g. 'golf 7 tdi' or 'toyota yaris'")] = None,
     max_price: Annotated[int | None, Field(description="Max price in EUR", ge=0)] = 5000,
     min_price: Annotated[int | None, Field(description="Min price in EUR, useful to skip parts/wreck ads", ge=0)] = None,
+    min_year: Annotated[int | None, Field(description="Oldest model year, e.g. 2012", ge=1950)] = None,
+    max_km: Annotated[int | None, Field(description="Max mileage in km", ge=0)] = None,
     search_url: Annotated[str | None, Field(description=(
         "Optional Njuskalo search URL with filters already applied on the website "
-        "(year, km, fuel, region...). Price/keyword arguments are layered on top."))] = None,
+        "(fuel, region, gearbox...). Price/keyword arguments are layered on top."))] = None,
     extra_filters: Annotated[dict[str, str] | None, Field(description="Raw Njuskalo query parameters to add")] = None,
     pages: Annotated[int, Field(description="Result pages to fetch (about 25 ads each)", ge=1, le=5)] = 1,
 ) -> dict:
@@ -79,7 +87,7 @@ async def search_cars(
     results: list[dict] = []
     seen: set[str] = set()
     for page in range(1, pages + 1):
-        url = build_search_url(search_url, keywords, min_price, max_price, extra_filters, page)
+        url = build_search_url(search_url, keywords, min_price, max_price, min_year, max_km, extra_filters, page)
         try:
             html = await fetcher.get(url)
         except BlockedError as exc:
@@ -100,7 +108,7 @@ async def search_cars(
                 _url_by_id[r["id"]] = r["url"]
         results.extend(page_results)
     return {"count": len(results), "search_url": build_search_url(
-        search_url, keywords, min_price, max_price, extra_filters, 1), "results": results}
+        search_url, keywords, min_price, max_price, min_year, max_km, extra_filters, 1), "results": results}
 
 
 @mcp.tool()

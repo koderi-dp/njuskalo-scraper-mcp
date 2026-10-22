@@ -13,13 +13,19 @@ This is an MCP server that lets Claude find the best used car on Njuskalo.hr, by
 ## Constraints
 
 - Njuskalo blocks non-HR and datacenter IPs. Never add a CI step that hits the live site.
-- The old Apify scraper from roshtarg-cpu had **no license**, so it was removed and none of its code is reused. Only facts were kept: the `__INITIAL_STATE__` location and the `price[from]` / `price[to]` / `page` / `keywords` parameters.
+- The old Apify scraper from roshtarg-cpu had **no license**, so it was removed and none of its code is reused. Only facts were kept: the `__INITIAL_STATE__` location and the `page` / `keywords` parameters (its `price[from]`/`price[to]` names were wrong; the site uses `price[min]`/`price[max]`).
 - Keep requests polite: at least 1.5 s apart, at most 5 pages per search.
 
-## Unverified against the live site (do these first, from a Croatian IP)
+## Live-site findings (tested 2026-10-22 from a US Google Cloud IP)
 
-1. Run `search_cars` and confirm the listing field names (`title`, `priceFormatted`, `location`, `abstracts`, `titleSlug`, `categorySlug`) and the constructed URLs `/{cat}/{slug}-oglas-{id}`.
-2. Save a real search page and a real ad page into `tests/fixtures/` and add tests for them.
-3. Check which `get_car_details` extraction path actually fires on real ad pages (state, JSON-LD, or table) and tighten the seller and price selectors.
-4. Find the real query parameter names for year, mileage, and fuel filters. They could become first-class `search_cars` arguments; until then, users pass `search_url` or `extra_filters`.
-5. Check whether plain curl_cffi gets through Radware from a home IP, or whether the Playwright fallback is needed.
+- Search works: field names and `/{cat}/{slug}-oglas-{id}` URLs are correct.
+- Verified filters: `price[min]`/`price[max]`, `yearManufactured[min|max]`, `mileage[min|max]`. Other form fields seen: `fuelTypeId`, `transmissionTypeId[...]`, `bodyTypeId`, `geo[locationIds]`, `sort` (value IDs unknown).
+- `keywords` on `/auti` is **ignored** (returns unfiltered results). The right way to search by model is unknown; maybe a brand/model path or `vehicleIds`.
+- `get_car_details` parses specs and description from the spec table, but `seller` comes back empty and loan-calculator rows (Iznos, Anuitet*, EKS...) end up in `specs`.
+- Radware is not IP-based only: datacenter IPs get through at first, but bursts of requests (especially plain curl) get redirected to `validate.perfdrive.com`. The curl_cffi fetcher was blocked after ~10 quick requests.
+
+## Still to do
+
+1. Save a real search page and a real ad page into `tests/fixtures/` and add tests for them.
+2. Fix keyword/model search, the seller selector, and filter loan rows out of `specs`.
+3. Test whether a cloud host stays unblocked under normal use, or needs `NJUSKALO_PROXY` / the Playwright fallback.

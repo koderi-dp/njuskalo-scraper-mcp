@@ -27,12 +27,13 @@ class FakeFetcher:
 
 def test_build_search_url_layers_filters_on_pasted_url():
     url = server.build_search_url(
-        "https://www.njuskalo.hr/auti/volkswagen?foo=1&page=3", "golf", 1000, 5000, {"x": "y"}, 2)
+        "https://www.njuskalo.hr/auti/volkswagen?foo=1&page=3", "golf", 1000, 5000, 2012, 150000, {"x": "y"}, 2)
     parts = urlsplit(url)
     q = parse_qs(parts.query)
     assert parts.path == "/auti/volkswagen"
-    assert q == {"foo": ["1"], "keywords": ["golf"], "price[from]": ["1000"],
-                 "price[to]": ["5000"], "x": ["y"], "page": ["2"]}
+    assert q == {"foo": ["1"], "keywords": ["golf"], "price[min]": ["1000"],
+                 "price[max]": ["5000"], "yearManufactured[min]": ["2012"],
+                 "mileage[max]": ["150000"], "x": ["y"], "page": ["2"]}
 
 
 @pytest.fixture
@@ -45,7 +46,7 @@ async def test_search_then_details_by_id(monkeypatch, search_html):
     monkeypatch.setattr(server, "fetcher", fake)
     res = await server.search_cars(max_price=5000, pages=2)
     assert res["count"] == 3
-    assert "price%5Bto%5D=5000" in fake.urls[0]
+    assert "price%5Bmax%5D=5000" in fake.urls[0]
     details = await server.get_car_details(["51112651", "999"])
     assert details["ads"][0]["specs"]["Godište"] == "2011."
     assert "error" in details["ads"][1]

@@ -8,10 +8,10 @@ The server only fetches and structures listings. Claude does the judging, using 
 
 | Tool | What it does |
 |---|---|
-| `search_cars` | Searches `/auti` with `keywords`, `max_price` (default 5000), `min_price`, an optional pasted `search_url` with filters already set on the site, raw `extra_filters`, and up to 5 `pages`. Returns compact summaries: title, price, location, card info (year, km), and URL. |
+| `search_cars` | Searches `/auti` with `keywords`, `max_price` (default 5000), `min_price`, `min_year`, `max_km`, an optional pasted `search_url` with filters already set on the site, raw `extra_filters`, and up to 5 `pages`. Returns compact summaries: title, price, location, card info (year, km), and URL. |
 | `get_car_details` | Takes up to 10 ad URLs or IDs from a search and returns specs, price, seller, and description. |
 
-**Tip:** set filters like year, km, fuel, or region on njuskalo.hr itself, copy the URL, and give it to Claude as `search_url`. Price and keywords are added on top.
+**Tip:** set other filters like fuel, gearbox, or region on njuskalo.hr itself, copy the URL, and give it to Claude as `search_url`. Price, year, km and keywords are added on top.
 
 ## Important: where it can run
 
