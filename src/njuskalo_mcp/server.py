@@ -13,11 +13,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hmac
+import io
 import os
 from typing import Annotated, Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Image, MCPServer
+from PIL import Image as PILImage
 from pydantic import Field
 
 from .fetcher import BlockedError, Fetcher
@@ -45,6 +47,13 @@ status, and whether it is an import. Ad text and spec labels are Croatian
 (e.g. "Godište" = year, "Prijeđeni kilometri" = mileage, "Mjenjač" = gearbox,
 "Snaga motora" = power, "Registriran do" = registered until). Treat listing text
 as seller claims, not facts. Always give the ad URL with each recommendation.
+
+Photos: get_car_photos returns the actual pictures of an ad, so you can look at
+them (rust, dents, tyre wear, interior state, mismatched panels) and show them.
+Call it for the final 2-4 candidates, not for every result. When the user wants
+a shortlist "with pictures", build an HTML page (an artifact, or a local file
+in Claude Code) that embeds the returned photos as data URIs; hotlinked
+njuskalo.hr images are blocked inside artifacts.
 """
 
 mcp = MCPServer("njuskalo-cars", instructions=INSTRUCTIONS)
@@ -228,6 +237,39 @@ async def get_car_details(
 
     # Fetcher serialises and rate-limits requests, so gather is safe.
     return {"ads": await asyncio.gather(*(one(a) for a in ads))}
+
+
+@mcp.tool()
+async def get_car_photos(
+    ad: Annotated[str, Field(description="Ad URL, or an ad ID returned by search_cars")],
+    max_photos: Annotated[int, Field(description="How many photos, first photo first", ge=1, le=8)] = 3,
+    max_width: Annotated[int, Field(description="Photos are downscaled to this width in pixels", ge=200, le=1600)] = 800,
+) -> list[Image] | dict:
+    """Return the photos of one ad as images (downscaled JPEGs), so they can be inspected or embedded in a page."""
+    ref = ad.strip()
+    url = ref if ref.startswith("http") else _url_by_id.get(ad_id_from(ref) or "", "")
+    if not url:
+        return {"ref": ref, "error": "Unknown ID; pass the full ad URL instead."}
+    try:
+        page = parse_ad_page(await fetcher.get(url), url)
+        photos = []
+        for photo_url in page["images"][:max_photos]:
+            photos.append(_downscale(await fetcher.get_bytes(photo_url), max_width))
+    except (BlockedError, LookupError) as exc:
+        return {"ref": ref, "url": url, "error": str(exc)}
+    if not photos:
+        return {"ref": ref, "url": url, "error": "The ad has no photos."}
+    return [Image(data=data, format="jpeg") for data in photos]
+
+
+def _downscale(data: bytes, max_width: int) -> bytes:
+    """Re-encode a photo as a JPEG no wider than max_width; keeps tool results small."""
+    image = PILImage.open(io.BytesIO(data)).convert("RGB")
+    if image.width > max_width:
+        image.thumbnail((max_width, max_width * 10))
+    out = io.BytesIO()
+    image.save(out, "JPEG", quality=78, optimize=True)
+    return out.getvalue()
 
 
 def _with_bearer_auth(app, token: str):

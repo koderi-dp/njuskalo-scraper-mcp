@@ -96,6 +96,29 @@ class Fetcher:
         self._cache[url] = (time.monotonic(), html)
         return html
 
+    async def get_bytes(self, url: str, max_bytes: int = 5_000_000) -> bytes:
+        """Download a photo. Rate-limited like pages, but static images get a shorter gap."""
+        cached = self._cache.get(url)
+        if cached and time.monotonic() - cached[0] < self.cache_ttl:
+            return cached[1]
+        async with self._lock:
+            wait = min(self.min_delay, 0.5) - (time.monotonic() - self._last_request)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            session = await self._get_session()
+            try:
+                resp = await session.get(url)
+            except Exception as exc:
+                raise BlockedError(f"Could not download {url} ({type(exc).__name__}: {exc})") from exc
+            finally:
+                self._last_request = time.monotonic()
+        content_type = resp.headers.get("content-type", "")
+        if resp.status_code != 200 or not content_type.startswith("image/"):
+            raise BlockedError(f"Njuskalo did not return an image for {url} (HTTP {resp.status_code}, {content_type})")
+        data = resp.content[:max_bytes]
+        self._cache[url] = (time.monotonic(), data)
+        return data
+
     async def _reset_session(self) -> None:
         session, self._session = self._session, None
         if session is not None:

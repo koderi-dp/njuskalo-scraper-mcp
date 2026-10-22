@@ -104,3 +104,39 @@ async def test_secret_path_hides_everything_else():
     await guarded({"type": "http", "path": "/s3cr3t/mcp"}, None, send)
     assert [m["status"] for m in sent if m["type"] == "http.response.start"] == [404, 404]
     assert seen == ["/mcp"]
+
+
+def _jpeg(width: int, height: int) -> bytes:
+    import io
+
+    from PIL import Image as PILImage
+
+    buf = io.BytesIO()
+    PILImage.new("RGB", (width, height), (120, 80, 40)).save(buf, "JPEG")
+    return buf.getvalue()
+
+
+async def test_get_car_photos_returns_downscaled_images(monkeypatch):
+    import base64
+    import io
+
+    from PIL import Image as PILImage
+
+    class PhotoFetcher(FakeFetcher):
+        async def get_bytes(self, url):
+            self.urls.append(url)
+            return _jpeg(1600, 1200)
+
+    fake = PhotoFetcher({"oglas-51851731": (FIX / "real_ad_page.html").read_text()})
+    monkeypatch.setattr(server, "fetcher", fake)
+    photos = await server.get_car_photos("https://www.njuskalo.hr/auti/opel-corsa-1.0-12v-oglas-51851731", max_photos=2, max_width=400)
+    assert len(photos) == 2
+    contents = [p.to_image_content() for p in photos]  # what the MCP client receives
+    assert all(c.mime_type == "image/jpeg" for c in contents)
+    assert PILImage.open(io.BytesIO(base64.b64decode(contents[0].data))).width == 400
+    assert fake.urls[1].endswith("slika-288682987.jpg")
+
+
+async def test_get_car_photos_unknown_id(monkeypatch):
+    monkeypatch.setattr(server, "fetcher", FakeFetcher())
+    assert "error" in await server.get_car_photos("999")
