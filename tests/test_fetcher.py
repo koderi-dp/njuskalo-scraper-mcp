@@ -25,7 +25,13 @@ async def test_challenged_session_is_discarded(monkeypatch):
     challenged = FakeSession([FakeResponse("<form>", "https://validate.perfdrive.com/x/?ssc=njuskalo")])
     fresh = FakeSession([FakeResponse("<script>window.__INITIAL_STATE__={}</script>", "https://www.njuskalo.hr/auti")])
     sessions = [challenged, fresh]
-    monkeypatch.setattr(fetcher, "_get_session", lambda: _pop(sessions))
+
+    async def get_session():  # like the real one: create lazily, keep until reset
+        if fetcher._session is None:
+            fetcher._session = sessions.pop(0)
+        return fetcher._session
+
+    monkeypatch.setattr(fetcher, "_get_session", get_session)
     monkeypatch.setattr(fetcher, "_browser_fallback", _no_browser)  # as when the [browser] extra is absent
 
     with pytest.raises(BlockedError, match="captcha"):
@@ -33,10 +39,7 @@ async def test_challenged_session_is_discarded(monkeypatch):
     assert challenged.closed and fetcher._session is None
 
     assert "__INITIAL_STATE__" in await fetcher.get("https://www.njuskalo.hr/auti")
-
-
-async def _pop(sessions):
-    return sessions.pop(0)
+    assert fetcher._session is fresh
 
 
 async def _no_browser(url):
