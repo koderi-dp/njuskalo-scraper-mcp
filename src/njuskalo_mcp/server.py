@@ -15,12 +15,15 @@ import asyncio
 import hmac
 import io
 import os
+from importlib.resources import files
 from typing import Annotated, Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from mcp.server.apps import Apps, ResourceCsp
 from mcp.server.mcpserver import Image, MCPServer
+from mcp.types import CallToolResult, TextContent
 from PIL import Image as PILImage
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from .fetcher import BlockedError, Fetcher
 from .parser import (
@@ -51,14 +54,81 @@ as seller claims, not facts. Always give the ad URL with each recommendation.
 Photos: get_car_photos returns the actual pictures of an ad so that you can
 inspect them (rust, dents, tyre wear, interior state, mismatched panels) and
 report what you see. Call it for the final 2-4 candidates, not for every
-result. The images are for your eyes: a chat reply cannot show them, so give
-the user the ad URL and the photo URLs (search results carry `image`, details
-carry `images`) as links. Only when you can write files (e.g. Claude Code) can
-you build a local HTML shortlist with the photos; hotlinked njuskalo.hr images
-work in a normal browser but are blocked inside claude.ai artifacts.
+result.
+
+Presenting a shortlist: call show_shortlist with the ranked cars (5-10, best
+first) and the ads you skipped. Clients that support MCP Apps (e.g. the
+claude.ai app) show it as a mobile-friendly page with a photo of every car, so
+do not write your own HTML page or artifact for it. Pass each car's `image`
+from search_cars. Elsewhere it returns a markdown table to show the user.
 """
 
-mcp = MCPServer("njuskalo-cars", instructions=INSTRUCTIONS)
+SHORTLIST_URI = "ui://njuskalo/shortlist.html"
+
+apps = Apps()
+
+
+class ShortlistCar(BaseModel):
+    name: str = Field(description="Make, model and engine, e.g. 'Toyota Yaris 1.0 VVT-i'")
+    url: str = Field(description="Ad URL")
+    price: str = Field(description="e.g. '€4,499'")
+    year: str | None = None
+    km: str | None = Field(None, description="e.g. '133,000 km'")
+    engine: str | None = Field(None, description="e.g. '1.0 petrol, 51 kW, manual'")
+    registered_until: str | None = Field(None, description="e.g. '02/2027'")
+    seller: str | None = Field(None, description="Private or dealer name, and town")
+    verdict: str | None = Field(None, description="One line: why it is on the list, and its catch")
+    image: str | None = Field(None, description="Photo URL (`image` from search_cars)")
+
+
+class SkippedAd(BaseModel):
+    title: str
+    reason: str
+    url: str | None = None
+
+
+@apps.tool(resource_uri=SHORTLIST_URI)
+async def show_shortlist(
+    cars: Annotated[list[ShortlistCar], Field(description="Ranked best first", min_length=1, max_length=12)],
+    title: Annotated[str, Field(description="e.g. '8 used cars under €5,000'")] = "Car shortlist",
+    subtitle: Annotated[str | None, Field(description="Search criteria and date checked")] = None,
+    skipped: Annotated[list[SkippedAd] | None, Field(description="Ads that were dropped, and why")] = None,
+) -> CallToolResult:
+    """Show the final ranked shortlist to the user as a page with a photo of each car."""
+    data = {
+        "title": title,
+        "subtitle": subtitle,
+        "cars": [c.model_dump() for c in cars],
+        "skipped": [s.model_dump() for s in skipped or []],
+    }
+    return CallToolResult(content=[TextContent(type="text", text=shortlist_markdown(data))], structured_content=data)
+
+
+def shortlist_markdown(data: dict) -> str:
+    """Text version of the shortlist for clients that cannot show the page."""
+    lines = [f"## {data['title']}", ""]
+    if data.get("subtitle"):
+        lines += [data["subtitle"], ""]
+    lines += ["| # | Car | Price | Year | km | Engine | Registered | Seller | Photo | Verdict |",
+              "|---|---|---|---|---|---|---|---|---|---|"]
+    for i, c in enumerate(data["cars"], 1):
+        cells = [str(i), f"[{c['name']}]({c['url']})", c["price"], c.get("year"), c.get("km"), c.get("engine"),
+                 c.get("registered_until"), c.get("seller"), f"[photo]({c['image']})" if c.get("image") else "",
+                 c.get("verdict")]
+        lines.append("| " + " | ".join((v or "").replace("|", "/") for v in cells) + " |")
+    if data.get("skipped"):
+        lines += ["", "Skipped:"] + [f"- {s['title']}: {s['reason']}" for s in data["skipped"]]
+    return "\n".join(lines)
+
+
+apps.add_html_resource(
+    SHORTLIST_URI,
+    files("njuskalo_mcp").joinpath("shortlist.html").read_text(encoding="utf-8"),
+    name="Car shortlist",
+    csp=ResourceCsp(resource_domains=["https://www.njuskalo.hr"]),
+)
+
+mcp = MCPServer("njuskalo-cars", instructions=INSTRUCTIONS, extensions=[apps])
 fetcher = Fetcher()
 _url_by_id: dict[str, str] = {}  # remembers ad URLs seen in searches
 

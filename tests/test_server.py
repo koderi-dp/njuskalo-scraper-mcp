@@ -140,3 +140,24 @@ async def test_get_car_photos_returns_downscaled_images(monkeypatch):
 async def test_get_car_photos_unknown_id(monkeypatch):
     monkeypatch.setattr(server, "fetcher", FakeFetcher())
     assert "error" in await server.get_car_photos("999")
+
+
+async def test_show_shortlist_is_an_mcp_app():
+    from mcp import Client
+
+    car = {"name": "Toyota Yaris 1.0", "url": "https://www.njuskalo.hr/auti/yaris-oglas-1", "price": "€4,499",
+           "year": "2010", "km": "133,000 km", "image": "https://www.njuskalo.hr/image-big/auti/yaris-slika-1.jpg"}
+    async with Client(server.mcp) as client:
+        tool = next(t for t in (await client.list_tools()).tools if t.name == "show_shortlist")
+        assert tool.meta["ui"]["resourceUri"] == server.SHORTLIST_URI
+        page = (await client.read_resource(server.SHORTLIST_URI)).contents[0]
+        assert page.mime_type == "text/html;profile=mcp-app"
+        assert "ui/initialize" in page.text and "get_car_photos" in page.text
+        assert page.meta["ui"]["csp"]["resourceDomains"] == ["https://www.njuskalo.hr"]
+
+        result = await client.call_tool("show_shortlist", {
+            "cars": [car], "title": "1 car", "skipped": [{"title": "Astra", "reason": "warning light"}]})
+    assert result.structured_content["cars"][0]["image"] == car["image"]
+    text = result.content[0].text
+    assert "[Toyota Yaris 1.0](https://www.njuskalo.hr/auti/yaris-oglas-1)" in text
+    assert "[photo](" in text and "- Astra: warning light" in text

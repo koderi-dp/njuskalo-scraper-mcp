@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Car Shortlist</title>
+<style>
+:root{--bg:#F2F4F7;--surface:#FFFFFF;--ink:#16233B;--muted:#5A6577;--line:#D5DAE2;--acc:#1F4FA8;--warn:#9A3B12;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0F141D;--surface:#182131;--ink:#E5E9F0;--muted:#9AA6B8;--line:#2A3547;--acc:#6A9BEB;--warn:#F2A27A;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0F141D;--surface:#182131;--ink:#E5E9F0;--muted:#9AA6B8;--line:#2A3547;--acc:#6A9BEB;--warn:#F2A27A;color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:16px}
+h1{font-size:clamp(1.4rem,5vw,2rem);line-height:1.1;margin:4px 0 6px}
+.lede{color:var(--muted);margin:0 0 16px}
+.grid{display:grid;gap:14px;grid-template-columns:1fr}
+@media (min-width:640px){.grid{grid-template-columns:1fr 1fr}}
+@media (min-width:1000px){.grid{grid-template-columns:1fr 1fr 1fr}}
+.car{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.photo{display:block;position:relative;aspect-ratio:4/3;background:var(--line);cursor:pointer;border:0;padding:0;width:100%}
+.photo img{display:block;width:100%;height:100%;object-fit:cover}
+.photo .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:12px;color:var(--muted);font-size:.9rem;text-align:center}
+.rank{position:absolute;top:8px;left:8px;background:var(--acc);color:#fff;font-weight:700;border-radius:999px;min-width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:.9rem}
+.body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px;flex:1}
+.top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+h2{font-size:1.1rem;margin:0;line-height:1.2}
+.price{font-weight:800;font-size:1.25rem;white-space:nowrap}
+dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:0;font-size:.92rem}
+dt{color:var(--muted)} dd{margin:0}
+.verdict{margin:0;padding-top:8px;border-top:1px solid var(--line)}
+.open{margin-top:auto;align-self:flex-start;background:none;border:0;padding:10px 0 0;min-height:44px;color:var(--acc);font:inherit;font-weight:600;cursor:pointer}
+a{color:var(--acc)}
+details{margin-top:20px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+summary{cursor:pointer;font-weight:600;min-height:28px}
+details ul{margin:8px 0 0;padding-left:1.1em} details li{margin:6px 0}
+.foot{color:var(--muted);font-size:.85rem;margin-top:16px}
+.empty{color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Car shortlist</h1>
+  <p class="lede" id="lede"></p>
+  <div class="grid" id="grid"><p class="empty">Waiting for the shortlist…</p></div>
+  <details id="skippedBox" hidden><summary>Ads that were skipped</summary><ul id="skipped"></ul></details>
+  <p class="foot">Verdicts are based only on what each ad says. Check the service records and VIN, and get an independent inspection before paying.</p>
+</main>
+<script>
+(function(){
+  var nextId = 1, pending = {};
+  function send(msg){ window.parent.postMessage(msg, '*'); }
+  function request(method, params){
+    var id = nextId++;
+    send({jsonrpc:'2.0', id:id, method:method, params:params || {}});
+    return new Promise(function(resolve, reject){ pending[id] = {resolve:resolve, reject:reject}; });
+  }
+  function notify(method, params){ send(params ? {jsonrpc:'2.0', method:method, params:params} : {jsonrpc:'2.0', method:method}); }
+
+  window.addEventListener('message', function(ev){
+    var m = ev.data;
+    if (!m || m.jsonrpc !== '2.0') return;
+    if (m.id != null && pending[m.id] && !m.method) {
+      var p = pending[m.id]; delete pending[m.id];
+      if (m.error) p.reject(m.error); else p.resolve(m.result);
+      return;
+    }
+    if (m.method === 'ui/notifications/tool-result') render((m.params || {}).structuredContent);
+    else if (m.method === 'ui/notifications/host-context-changed') applyContext(m.params);
+    else if (m.method === 'ui/resource-teardown' && m.id != null) send({jsonrpc:'2.0', id:m.id, result:{}});
+  });
+
+  function applyContext(ctx){
+    if (ctx && (ctx.theme === 'dark' || ctx.theme === 'light')) document.documentElement.setAttribute('data-theme', ctx.theme);
+  }
+
+  function reportSize(){
+    notify('ui/notifications/size-changed', {width:document.documentElement.scrollWidth, height:document.documentElement.scrollHeight});
+  }
+  if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.body);
+
+  function openLink(url){
+    request('ui/open-link', {url:url}).catch(function(){ window.open(url, '_blank', 'noopener'); });
+  }
+
+  function el(tag, attrs, text){
+    var n = document.createElement(tag);
+    if (attrs) for (var a in attrs) n.setAttribute(a, attrs[a]);
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  // Photos load straight from njuskalo.hr; if the host blocks that, ask the server for them.
+  function loadPhotoViaServer(box, car){
+    box.querySelector('.ph') || box.appendChild(el('span', {'class':'ph'}, 'Loading photo…'));
+    request('tools/call', {name:'get_car_photos', arguments:{ad:car.url, max_photos:1, max_width:640}}).then(function(res){
+      var img = ((res && res.content) || []).filter(function(b){ return b.type === 'image' && b.data; })[0];
+      if (!img) throw new Error('no photo');
+      setPhoto(box, car, 'data:' + (img.mimeType || 'image/jpeg') + ';base64,' + img.data, null);
+    }).catch(function(){
+      var ph = box.querySelector('.ph'); if (ph) ph.textContent = 'No photo. Tap to open the ad.';
+    });
+  }
+  function setPhoto(box, car, src, onError){
+    var old = box.querySelector('img'); if (old) old.remove();
+    var img = el('img', {src:src, alt:car.name + ', photo from the ad'});
+    img.addEventListener('load', function(){ var ph = box.querySelector('.ph'); if (ph) ph.remove(); });
+    if (onError) img.addEventListener('error', onError);
+    box.insertBefore(img, box.firstChild);
+  }
+
+  function render(data){
+    if (!data || !data.cars) return;
+    if (data.title) { document.getElementById('title').textContent = data.title; document.title = data.title; }
+    document.getElementById('lede').textContent = data.subtitle || '';
+    var grid = document.getElementById('grid'); grid.textContent = '';
+    data.cars.forEach(function(c, i){
+      var card = el('article', {'class':'car'});
+      var box = el('button', {'class':'photo', type:'button', 'aria-label':'Open the ad for ' + c.name});
+      box.appendChild(el('span', {'class':'ph'}, 'Loading photo…'));
+      box.appendChild(el('span', {'class':'rank'}, String(i + 1)));
+      box.addEventListener('click', function(){ openLink(c.url); });
+      card.appendChild(box);
+      if (c.image) setPhoto(box, c, c.image, function(){ loadPhotoViaServer(box, c); });
+      else loadPhotoViaServer(box, c);
+
+      var b = el('div', {'class':'body'});
+      var top = el('div', {'class':'top'});
+      top.appendChild(el('h2', null, c.name));
+      top.appendChild(el('div', {'class':'price'}, c.price));
+      b.appendChild(top);
+      var dl = el('dl');
+      [['Year', c.year], ['Mileage', c.km], ['Engine', c.engine], ['Registered until', c.registered_until], ['Seller', c.seller]]
+        .forEach(function(r){ if (r[1]) { dl.appendChild(el('dt', null, r[0])); dl.appendChild(el('dd', null, r[1])); } });
+      b.appendChild(dl);
+      if (c.verdict) b.appendChild(el('p', {'class':'verdict'}, c.verdict));
+      var open = el('button', {'class':'open', type:'button'}, 'Open ad on Njuškalo');
+      open.addEventListener('click', function(){ openLink(c.url); });
+      b.appendChild(open);
+      card.appendChild(b);
+      grid.appendChild(card);
+    });
+    var skipped = data.skipped || [], ul = document.getElementById('skipped'); ul.textContent = '';
+    skipped.forEach(function(s){
+      var li = el('li'), a = el('a', {href:s.url || '#'}, s.title);
+      a.addEventListener('click', function(e){ e.preventDefault(); if (s.url) openLink(s.url); });
+      li.appendChild(a); if (s.reason) li.appendChild(document.createTextNode(': ' + s.reason)); ul.appendChild(li);
+    });
+    document.getElementById('skippedBox').hidden = !skipped.length;
+    reportSize();
+  }
+
+  request('ui/initialize', {
+    protocolVersion:'2026-01-26',
+    appInfo:{name:'njuskalo-shortlist', version:'1.0.0'},
+    appCapabilities:{availableDisplayModes:['inline']}
+  }).then(function(res){
+    applyContext(res && res.hostContext);
+    notify('ui/notifications/initialized');
+    reportSize();
+  });
+})();
+</script>
+</body>
+</html>
