@@ -10,7 +10,7 @@ This is an MCP server that lets Claude find the best used car on Njuskalo.hr, by
 - `src/njuskalo_mcp/shortlist.html` is the `ui://njuskalo/shortlist.html` app page. It speaks the MCP Apps postMessage protocol by hand (no SDK, no build step): `ui/initialize`, then renders `ui/notifications/tool-result`. Photos load straight from njuskalo.hr (allowed by the resource's CSP `resourceDomains`); if one fails, the page calls `get_car_photos` through the host. Links go through `ui/open-link`. Claude never re-emits image bytes.
 - `deploy/home-proxy/` is a tinyproxy image (password, njuskalo.hr-only filter) to run at home and point `NJUSKALO_PROXY` at from a cloud host.
 - `tests/` runs against synthetic fixtures; there is no network access in tests.
-- `.github/workflows/ci.yml` runs ruff and pytest. `publish.yml` runs tests, then pushes a multi-arch image to `ghcr.io/koderi-dp/njuskalo-scraper-mcp`.
+- `.github/workflows/ci.yml` runs ruff and pytest. `publish.yml` runs tests, then pushes an amd64 image (the server runs on an x64 Proxmox host; arm64 under QEMU was the slow part of the build) to `ghcr.io/koderi-dp/njuskalo-scraper-mcp`.
 
 ## Constraints
 
