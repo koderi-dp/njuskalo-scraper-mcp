@@ -152,11 +152,13 @@ async def test_show_shortlist_is_an_mcp_app():
         assert tool.meta["ui"]["resourceUri"] == server.SHORTLIST_URI
         page = (await client.read_resource(server.SHORTLIST_URI)).contents[0]
         assert page.mime_type == "text/html;profile=mcp-app"
-        assert "ui/initialize" in page.text and "get_car_photos" in page.text
+        assert "ui/initialize" in page.text and "get_car_photos" in page.text and "Kilometraža" in page.text
         assert "https://www.njuskalo.hr" in page.meta["ui"]["csp"]["resourceDomains"]
 
         result = await client.call_tool("show_shortlist", {
-            "cars": [car], "title": "1 car", "skipped": [{"title": "Astra", "reason": "warning light"}]})
+            "cars": [car], "title": "1 car", "language": "hr",
+            "skipped": [{"title": "Astra", "reason": "warning light"}]})
+    assert result.structured_content["language"] == "hr"
     assert result.structured_content["cars"][0]["image"] == car["image"]
     text = result.content[0].text
     assert "[Toyota Yaris 1.0](https://www.njuskalo.hr/auti/yaris-oglas-1)" in text

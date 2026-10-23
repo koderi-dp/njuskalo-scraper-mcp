@@ -77,10 +77,10 @@ details a{color:var(--eu)}
   </header>
   <div class="grid" id="grid"><p class="empty">Waiting for the shortlist…</p></div>
   <details id="skippedBox" hidden>
-    <summary>Ads that were skipped</summary>
+    <summary id="skippedTitle">Ads that were skipped</summary>
     <ul id="skipped"></ul>
   </details>
-  <p class="foot">Verdicts are based only on what each ad says. Ask for service records, check the VIN and take any car to an independent inspection before paying.</p>
+  <p class="foot" id="foot">Verdicts are based only on what each ad says. Ask for service records, check the VIN and take any car to an independent inspection before paying.</p>
 </main>
 <script>
 (function(){
@@ -129,6 +129,19 @@ details a{color:var(--eu)}
     request('ui/open-link', {url:url}).catch(function(){ window.open(url, '_blank', 'noopener'); });
   }
 
+  // Fixed labels; Claude passes the conversation's language as `language`.
+  var LABELS = {
+    en:{year:'Year', km:'Mileage', engine:'Engine', reg:'Registered until', seller:'Seller', open:'Open ad on Njuškalo',
+        openFor:'Open the ad for ', photoOf:', photo from the ad', loading:'Loading photo…',
+        noPhoto:'No photo. Tap to open the ad.', skipped:'Ads that were skipped',
+        foot:'Verdicts are based only on what each ad says. Ask for service records, check the VIN and take any car to an independent inspection before paying.'},
+    hr:{year:'Godište', km:'Kilometraža', engine:'Motor', reg:'Registriran do', seller:'Prodavač', open:'Otvori oglas na Njuškalu',
+        openFor:'Otvori oglas za ', photoOf:', fotografija iz oglasa', loading:'Učitavanje fotografije…',
+        noPhoto:'Nema fotografije. Dodirni za otvaranje oglasa.', skipped:'Preskočeni oglasi',
+        foot:'Ocjene se temelje samo na onome što piše u oglasu. Tražite servisnu povijest, provjerite broj šasije i prije plaćanja odvezite auto na neovisni pregled.'}
+  };
+  var L = LABELS.en;
+
   function el(tag, attrs, text){
     var n = document.createElement(tag);
     if (attrs) for (var a in attrs) n.setAttribute(a, attrs[a]);
@@ -138,18 +151,18 @@ details a{color:var(--eu)}
 
   // Photos load straight from njuskalo.hr; if the host blocks that, ask the server for them.
   function loadPhotoViaServer(box, car){
-    box.querySelector('.ph') || box.appendChild(el('span', {'class':'ph'}, 'Loading photo…'));
+    box.querySelector('.ph') || box.appendChild(el('span', {'class':'ph'}, L.loading));
     request('tools/call', {name:'get_car_photos', arguments:{ad:car.url, max_photos:1, max_width:640}}).then(function(res){
       var img = ((res && res.content) || []).filter(function(b){ return b.type === 'image' && b.data; })[0];
       if (!img) throw new Error('no photo');
       setPhoto(box, car, 'data:' + (img.mimeType || 'image/jpeg') + ';base64,' + img.data, null);
     }).catch(function(){
-      var ph = box.querySelector('.ph'); if (ph) ph.textContent = 'No photo. Tap to open the ad.';
+      var ph = box.querySelector('.ph'); if (ph) ph.textContent = L.noPhoto;
     });
   }
   function setPhoto(box, car, src, onError){
     var old = box.querySelector('img'); if (old) old.remove();
-    var img = el('img', {src:src, alt:car.name + ', photo from the ad'});
+    var img = el('img', {src:src, alt:car.name + L.photoOf});
     img.addEventListener('load', function(){ var ph = box.querySelector('.ph'); if (ph) ph.remove(); });
     if (onError) img.addEventListener('error', onError);
     box.insertBefore(img, box.firstChild);
@@ -157,7 +170,7 @@ details a{color:var(--eu)}
 
   // Registration shown as an HR plate; outlined in orange when it runs out within two months.
   function plate(reg){
-    var p = el('div', {'class':'plate', title:'Registered until ' + reg, 'aria-label':'Registered until ' + reg});
+    var p = el('div', {'class':'plate', title:L.reg + ' ' + reg, 'aria-label':L.reg + ' ' + reg});
     var m = /^(\d{1,2})\s*\/\s*(\d{2}|\d{4})$/.exec(reg.trim());
     if (m) {
       var year = m[2].length === 2 ? 2000 + +m[2] : +m[2], now = new Date();
@@ -171,13 +184,17 @@ details a{color:var(--eu)}
 
   function render(data){
     if (!data || !data.cars) return;
+    L = LABELS[(data.language || 'en').slice(0, 2).toLowerCase()] || LABELS.en;
+    document.documentElement.lang = L === LABELS.hr ? 'hr' : 'en';
+    document.getElementById('skippedTitle').textContent = L.skipped;
+    document.getElementById('foot').textContent = L.foot;
     if (data.title) { document.getElementById('title').textContent = data.title; document.title = data.title; }
     document.getElementById('lede').textContent = data.subtitle || '';
     var grid = document.getElementById('grid'); grid.textContent = '';
     data.cars.forEach(function(c, i){
       var card = el('article', {'class':'car'});
-      var box = el('button', {'class':'photo', type:'button', 'aria-label':'Open the ad for ' + c.name});
-      box.appendChild(el('span', {'class':'ph'}, 'Loading photo…'));
+      var box = el('button', {'class':'photo', type:'button', 'aria-label':L.openFor + c.name});
+      box.appendChild(el('span', {'class':'ph'}, L.loading));
       box.appendChild(el('span', {'class':'rank'}, String(i + 1)));
       box.addEventListener('click', function(){ openLink(c.url); });
       card.appendChild(box);
@@ -193,11 +210,11 @@ details a{color:var(--eu)}
       b.appendChild(top);
       if (c.registered_until) b.appendChild(plate(c.registered_until));
       var dl = el('dl');
-      [['Year', c.year], ['Mileage', c.km], ['Engine', c.engine], ['Registered until', c.registered_until], ['Seller', c.seller]]
+      [[L.year, c.year], [L.km, c.km], [L.engine, c.engine], [L.reg, c.registered_until], [L.seller, c.seller]]
         .forEach(function(r){ if (r[1]) { dl.appendChild(el('dt', null, r[0])); dl.appendChild(el('dd', null, r[1])); } });
       b.appendChild(dl);
       if (c.verdict) b.appendChild(el('p', {'class':'verdict'}, c.verdict));
-      var open = el('button', {'class':'open', type:'button'}, 'Open ad on Njuškalo');
+      var open = el('button', {'class':'open', type:'button'}, L.open);
       open.addEventListener('click', function(){ openLink(c.url); });
       b.appendChild(open);
       card.appendChild(b);

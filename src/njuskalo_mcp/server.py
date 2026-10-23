@@ -16,7 +16,7 @@ import hmac
 import io
 import os
 from importlib.resources import files
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from mcp.server.apps import Apps, ResourceCsp
@@ -60,7 +60,7 @@ Presenting a shortlist: call show_shortlist with the ranked cars (5-10, best
 first) and the ads you skipped. Clients that support MCP Apps (e.g. the
 claude.ai app) show it as a mobile-friendly page with a photo of every car, so
 do not write your own HTML page or artifact for it. Pass each car's `image`
-from search_cars. Elsewhere it returns a markdown table to show the user.
+from search_cars, and set `language` to the user's language (en or hr). Elsewhere it returns a markdown table to show the user.
 """
 
 SHORTLIST_URI = "ui://njuskalo/shortlist.html"
@@ -93,11 +93,15 @@ async def show_shortlist(
     title: Annotated[str, Field(description="e.g. '8 used cars under €5,000'")] = "Car shortlist",
     subtitle: Annotated[str | None, Field(description="Search criteria and date checked")] = None,
     skipped: Annotated[list[SkippedAd] | None, Field(description="Ads that were dropped, and why")] = None,
+    language: Annotated[Literal["en", "hr"], Field(description=(
+        "Language of the conversation; the page's fixed labels follow it. Write title, subtitle, "
+        "verdicts and reasons in the same language"))] = "en",
 ) -> CallToolResult:
     """Show the final ranked shortlist to the user as a page with a photo of each car."""
     data = {
         "title": title,
         "subtitle": subtitle,
+        "language": language,
         "cars": [c.model_dump() for c in cars],
         "skipped": [s.model_dump() for s in skipped or []],
     }
