@@ -110,10 +110,20 @@ details a{color:var(--eu)}
     if (ctx && (ctx.theme === 'dark' || ctx.theme === 'light')) document.documentElement.setAttribute('data-theme', ctx.theme);
   }
 
+  // Report the full content height (as the ext-apps SDK does) whenever it changes, so the host's
+  // frame is never shorter than the page. Width is left to the host.
+  var lastHeight = 0;
   function reportSize(){
-    notify('ui/notifications/size-changed', {width:document.documentElement.scrollWidth, height:document.documentElement.scrollHeight});
+    var html = document.documentElement, prev = html.style.height;
+    html.style.height = 'max-content';
+    var height = Math.ceil(html.getBoundingClientRect().height);
+    html.style.height = prev;
+    if (height !== lastHeight) { lastHeight = height; notify('ui/notifications/size-changed', {height:height}); }
   }
-  if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.body);
+  if (window.ResizeObserver) { var ro = new ResizeObserver(reportSize); ro.observe(document.documentElement); ro.observe(document.body); }
+  window.addEventListener('load', reportSize);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(reportSize);
+  document.addEventListener('load', function(e){ if (e.target.tagName === 'IMG') reportSize(); }, true);
 
   function openLink(url){
     request('ui/open-link', {url:url}).catch(function(){ window.open(url, '_blank', 'noopener'); });
