@@ -34,6 +34,8 @@ main{max-width:1180px;margin:0 auto;padding:20px 16px 48px}
 header{max-width:62ch;margin:8px 0 24px}
 h1{font:700 clamp(2rem,7vw,3.2rem)/1.02 "Barlow Condensed","Arial Narrow",sans-serif;letter-spacing:-.01em;margin:0 0 10px}
 .lede{color:var(--muted);margin:0}
+.fs{margin-top:12px;background:var(--surface);color:var(--eu);border:1px solid var(--line);border-radius:999px;font:600 .95rem Barlow,sans-serif;padding:8px 14px;min-height:44px;cursor:pointer}
+html.inner-scroll{overflow-y:auto;-webkit-overflow-scrolling:touch}
 .grid{display:grid;gap:18px;grid-template-columns:1fr}
 @media (min-width:720px){.grid{grid-template-columns:1fr 1fr}}
 @media (min-width:1100px){.grid{grid-template-columns:1fr 1fr 1fr}}
@@ -74,6 +76,7 @@ details a{color:var(--eu)}
   <header>
     <h1 id="title">Car shortlist</h1>
     <p class="lede" id="lede"></p>
+    <button id="fs" class="fs" type="button" hidden></button>
   </header>
   <div class="grid" id="grid"><p class="empty">Waiting for the shortlist…</p></div>
   <details id="skippedBox" hidden>
@@ -106,20 +109,54 @@ details a{color:var(--eu)}
     else if (m.method === 'ui/resource-teardown' && m.id != null) send({jsonrpc:'2.0', id:m.id, result:{}});
   });
 
+  var host = {displayMode:'inline', availableDisplayModes:['inline'], maxHeight:0};
   function applyContext(ctx){
-    if (ctx && (ctx.theme === 'dark' || ctx.theme === 'light')) document.documentElement.setAttribute('data-theme', ctx.theme);
+    if (!ctx) return;
+    if (ctx.theme === 'dark' || ctx.theme === 'light') document.documentElement.setAttribute('data-theme', ctx.theme);
+    if (ctx.displayMode) host.displayMode = ctx.displayMode;
+    if (ctx.availableDisplayModes) host.availableDisplayModes = ctx.availableDisplayModes;
+    if (ctx.containerDimensions) host.maxHeight = ctx.containerDimensions.maxHeight || ctx.containerDimensions.height || 0;
+    updateFsButton();
+    reportSize();
   }
 
-  // Report the full content height (as the ext-apps SDK does) whenever it changes, so the host's
-  // frame is never shorter than the page. Width is left to the host.
-  var lastHeight = 0;
+  // Fullscreen: the host gives the page the whole screen and it scrolls like any document.
+  function updateFsButton(){
+    var b = document.getElementById('fs'), can = host.availableDisplayModes.indexOf('fullscreen') !== -1;
+    b.hidden = !can;
+    b.textContent = host.displayMode === 'fullscreen' ? L.fsExit : L.fs;
+  }
+  document.getElementById('fs').addEventListener('click', function(){
+    var mode = host.displayMode === 'fullscreen' ? 'inline' : 'fullscreen';
+    request('ui/request-display-mode', {mode:mode}).then(function(res){
+      host.displayMode = (res && res.mode) || mode;
+      updateFsButton(); reportSize();
+    }).catch(function(){});
+  });
+
+  // Inline, the host sizes the frame from what we report, but phones cap it. When the content is
+  // taller than that cap (containerDimensions, or a frame that came back shorter than asked), the
+  // document itself scrolls inside the frame so a finger on the cards scrolls the list. Width is
+  // left to the host.
+  var lastHeight = 0, clampedTo = 0;
+  function contentHeight(){
+    var html = document.documentElement, prevH = html.style.height, hadScroll = html.classList.contains('inner-scroll');
+    html.classList.remove('inner-scroll'); html.style.height = 'max-content';
+    var h = Math.ceil(html.getBoundingClientRect().height);
+    html.style.height = prevH; if (hadScroll) html.classList.add('inner-scroll');
+    return h;
+  }
   function reportSize(){
-    var html = document.documentElement, prev = html.style.height;
-    html.style.height = 'max-content';
-    var height = Math.ceil(html.getBoundingClientRect().height);
-    html.style.height = prev;
+    var html = document.documentElement, content = contentHeight();
+    if (host.displayMode === 'fullscreen') { html.style.height = ''; html.classList.remove('inner-scroll'); return; }
+    var limit = host.maxHeight || clampedTo, height = limit && content > limit ? limit : content;
+    if (height < content) { html.style.height = height + 'px'; html.classList.add('inner-scroll'); }
+    else { html.style.height = ''; html.classList.remove('inner-scroll'); }
     if (height !== lastHeight) { lastHeight = height; notify('ui/notifications/size-changed', {height:height}); }
   }
+  window.addEventListener('resize', function(){
+    if (host.displayMode !== 'fullscreen' && lastHeight && window.innerHeight < lastHeight - 2) { clampedTo = window.innerHeight; reportSize(); }
+  });
   if (window.ResizeObserver) { var ro = new ResizeObserver(reportSize); ro.observe(document.documentElement); ro.observe(document.body); }
   window.addEventListener('load', reportSize);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(reportSize);
@@ -134,10 +171,12 @@ details a{color:var(--eu)}
     en:{year:'Year', km:'Mileage', engine:'Engine', reg:'Registered until', seller:'Seller', open:'Open ad on Njuškalo',
         openFor:'Open the ad for ', photoOf:', photo from the ad', loading:'Loading photo…',
         noPhoto:'No photo. Tap to open the ad.', skipped:'Ads that were skipped',
+        fs:'Full screen', fsExit:'Exit full screen',
         foot:'Verdicts are based only on what each ad says. Ask for service records, check the VIN and take any car to an independent inspection before paying.'},
     hr:{year:'Godište', km:'Kilometraža', engine:'Motor', reg:'Registriran do', seller:'Prodavač', open:'Otvori oglas na Njuškalu',
         openFor:'Otvori oglas za ', photoOf:', fotografija iz oglasa', loading:'Učitavanje fotografije…',
         noPhoto:'Nema fotografije. Dodirni za otvaranje oglasa.', skipped:'Preskočeni oglasi',
+        fs:'Cijeli zaslon', fsExit:'Zatvori cijeli zaslon',
         foot:'Ocjene se temelje samo na onome što piše u oglasu. Tražite servisnu povijest, provjerite broj šasije i prije plaćanja odvezite auto na neovisni pregled.'}
   };
   var L = LABELS.en;
@@ -188,6 +227,7 @@ details a{color:var(--eu)}
     document.documentElement.lang = L === LABELS.hr ? 'hr' : 'en';
     document.getElementById('skippedTitle').textContent = L.skipped;
     document.getElementById('foot').textContent = L.foot;
+    updateFsButton();
     if (data.title) { document.getElementById('title').textContent = data.title; document.title = data.title; }
     document.getElementById('lede').textContent = data.subtitle || '';
     var grid = document.getElementById('grid'); grid.textContent = '';
@@ -233,7 +273,7 @@ details a{color:var(--eu)}
   request('ui/initialize', {
     protocolVersion:'2026-01-26',
     appInfo:{name:'njuskalo-shortlist', version:'1.0.0'},
-    appCapabilities:{availableDisplayModes:['inline']}
+    appCapabilities:{availableDisplayModes:['inline', 'fullscreen']}
   }).then(function(res){
     applyContext(res && res.hostContext);
     notify('ui/notifications/initialized');
